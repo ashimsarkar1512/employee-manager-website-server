@@ -31,16 +31,47 @@ async function run() {
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
 
+    const userCollection = client.db("StaffLinkUser").collection("users");
     const assetCollection = client.db("StaffLinkUser").collection("assets");
 
+    app.post('/users', async(req,res)=>{
+      const user=req.body;
+      const result=await userCollection.insertOne(user);
+      res.send(result)
+    })
     app.post('/assets', async(req,res)=>{
       const asset=req.body;
       const result=await assetCollection.insertOne(asset);
       res.send(result)
     })
+   
+     app.get('/assets',async(req,res)=>{
+      const result=await assetCollection.find().toArray()
+      res.send(result)
+     })
 
 
 
+     app.patch('/assets/:id',async(req,res)=>{
+      const item=req.body;
+      const id=req.params.id
+      const filter ={_id: new ObjectId(id)}
+      const updateDoc={
+        $set:{
+          name:item.name,
+          type:item.type,
+          quantity:item.quantity,
+       
+          image:item.image
+
+        }
+       
+      }
+      const result=await assetCollection.updateOne(filter,updateDoc)
+      res.send(result)
+    })
+
+   
 
 
 
