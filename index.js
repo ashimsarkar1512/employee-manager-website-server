@@ -30,7 +30,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     const userCollection = client.db("StaffLinkUser").collection("users");
     const productCollection = client.db("StaffLinkUser").collection("requestAsset");
@@ -105,7 +105,13 @@ async function run() {
     })
 
     app.get('/users',verifyToken,async(req,res)=>{
-      const result=await userCollection.find().toArray()
+      const query = { role: "employee" };
+        const result = await userCollection.find(query).toArray();
+      res.send(result)
+    })
+    app.get('/users',verifyToken,async(req,res)=>{
+      
+        const result = await userCollection.find().toArray();
       res.send(result)
     })
 
@@ -128,6 +134,10 @@ async function run() {
       const result=await userCollection.deleteOne(query)
       res.send(result)
     })
+    
+
+
+    
 
 
     // normal employee 
@@ -148,6 +158,17 @@ async function run() {
       const result=await productCollection.insertOne(assets);
       res.send(result)
     })
+
+
+     app.get('/requestAsset', async(req,res)=>{
+      const {email}=req.query;
+      const query={email:email}
+           
+      const result=await productCollection.find(query).toArray();
+      res.send(result)
+    })
+
+
     app.get('/requestAsset/:email',async(req,res)=>{
       const email=req.params.email
       const query={email:email}
@@ -167,16 +188,16 @@ async function run() {
 
     })
 
-    app.get('/requestAsset/:email',async(req,res)=>{
-      const email=req.params.email
+    // app.get('/requestAsset/:email',async(req,res)=>{
+    //   const email=req.params.email
 
-      const query = {email:email,
-         status: "pending" };
+    //   const query = {email:email,
+    //      status: "pending" };
 
-      const result=await productCollection.find(query).toArray()
-      console.log(result);
-      res.send(result)
-    })
+    //   const result=await productCollection.find(query).toArray()
+    //   console.log(result);
+    //   res.send(result)
+    // })
 
     
     app.put('/requestAsset/:id', async (req, res) => {
@@ -291,8 +312,8 @@ async function run() {
 
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    // await client.db("admin").command({ ping: 1 });
+    // console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
