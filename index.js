@@ -3,6 +3,7 @@ const app=express();
 const cors = require('cors');
 const jwt=require('jsonwebtoken')
 require('dotenv').config()
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const port=process.env.PORT || 5000;
 
@@ -10,7 +11,16 @@ const port=process.env.PORT || 5000;
 
 // middleware
 
-app.use(cors());
+app.use(cors(
+  {
+    origin: [
+      "http://localhost:5173",
+      'http://localhost:5174',
+     "https://assignment-12-category-0007-server.vercel.app"
+    ],
+    
+  }
+));
 app.use(express.json())
 
 
@@ -34,6 +44,7 @@ async function run() {
 
     const userCollection = client.db("StaffLinkUser").collection("users");
     const productCollection = client.db("StaffLinkUser").collection("requestAsset");
+    const paymentCollection = client.db("StaffLinkUser").collection("payments");
     const employeeCollection = client.db("StaffLinkUser").collection("products");
     const assetCollection = client.db("StaffLinkUser").collection("assets");
 
@@ -80,21 +91,30 @@ async function run() {
 
           // employee
 
-     app.get("/users/:email", verifyToken, async (request, response) => {
-      const email = request.params.email;
+  //    app.get("/users/:email", async (request, response) => {
+  //     const email = request.params.email;
 
-      if (email !== request.decoded.email) {
-          return response.status(403).send({ message: "unauthorized" });
-      }
+  //     if (email !== request.decoded.email) {
+  //         return response.status(403).send({ message: "unauthorized" });
+  //     }
 
-      const query = { email: email };
-      const user = await userCollection.findOne(query);
-      let employee = false;
-      if (user?.email && user?.role === "employee") {
-          employee = user;
-      }
-      // console.log(hr);
-      response.send(employee);
+  //     const query = { email: email };
+  //     const user = await userCollection.findOne(query);
+  //     let employee = false;
+  //     if (user?.email && user?.role === "employee") {
+  //         employee = user;
+  //     }
+  //     // console.log(hr);
+  //     response.send(employee);
+  // });
+
+
+  app.get("/users/:email", async (req, res) => {
+    const email = req.params.email;
+    console.log(email);
+    const query = { email: email };
+    const user = await userCollection.findOne(query);
+    res.send(user);
   });
     
 
@@ -104,17 +124,47 @@ async function run() {
       res.send(result)
     })
 
-    app.get('/users',verifyToken,async(req,res)=>{
+    app.get('/users',async(req,res)=>{
       const query = { role: "employee" };
         const result = await userCollection.find(query).toArray();
       res.send(result)
     })
-    app.get('/users',verifyToken,async(req,res)=>{
-      
-        const result = await userCollection.find().toArray();
-      res.send(result)
-    })
+  
 
+    app.patch("/users/:id", async (req, res) => {
+      const id = req.params.id;
+      const { company_name, company_logo } = req.body;
+      const filter = { _id: new ObjectId(id) };
+      const updateDoc = {
+        $set: {
+          company_name,
+          company_logo,
+        },
+      };
+      const result = await userCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
+
+  
+    // app.patch('/users/:id', async (req, res) => {
+      
+    //     const { id } = req.params;
+    //     const { companyName, companyLogo, addedBy, affiliate } = req.body;
+    
+    //     const result = await db.collection('users').updateOne(
+    //       { _id: new ObjectId(id) },
+    //       {
+    //         $set: {
+    //           companyName,
+    //           companyLogo,
+    //           addedBy,
+    //           affiliate
+    //         }
+    //       }
+    //     );
+    
+    //    res.send(result)
+    // });
 
     app.patch('/users/hr/:id',async(req,res)=>{
       const id=req.params.id
@@ -140,13 +190,7 @@ async function run() {
     
 
 
-    // normal employee 
-    //  app.post('/employee', async(req,res)=>{
-    //   const request=req.body;
-    //   const result =await employeeCollection.insertOne(request)
-    //   res.send(result)
-    //  })
-
+    
 
      app.get('/products',async(req,res)=>{
       const result=await employeeCollection.find().toArray()
@@ -188,16 +232,38 @@ async function run() {
 
     })
 
-    // app.get('/requestAsset/:email',async(req,res)=>{
-    //   const email=req.params.email
 
-    //   const query = {email:email,
-    //      status: "pending" };
+    app.put('/requestAsset/approve/:id', async (req, res) => {
+      try {
+          const { id } = req.params;
+          const { hrEmail } = req.body;
+          const approvalDate = new Date().toISOString();
+          const updatedRequest = await productCollection.findOneAndUpdate(
+              { _id: new ObjectId(id) },
+              { $set: { status: 'approved', approvalDate: approvalDate, email: hrEmail } },
+              { returnOriginal: false }
+          );
+          res.json({ success: true, data: updatedRequest.value });
+      } catch (err) {
+          console.error('Error approving request:', err);
+          res.status(500).json({ error: 'Failed to approve request' });
+      }
+  });
+    app.put('/requestAsset/reject/:id', async (req, res) => {
+      try {
+        const { id } = req.params;
+        const updatedRequest = await productCollection.findOneAndUpdate(
+          { _id: new ObjectId(id) },
+          { $set: { status: 'rejected' } },
+          { returnOriginal: false }
+        );
+        res.json({ success: true, data: updatedRequest.value });
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to reject request' });
+      }
+    });
 
-    //   const result=await productCollection.find(query).toArray()
-    //   console.log(result);
-    //   res.send(result)
-    // })
+   
 
     
     app.put('/requestAsset/:id', async (req, res) => {
@@ -256,10 +322,11 @@ async function run() {
 
 
 
-       app.get('/assets',async(req,res)=>{
-  
-      const result=await assetCollection.find().toArray()
-      res.send(result)
+     app.get('/assets/:id', async(req,res)=>{
+      const id=req.params.id
+       const query={_id:new ObjectId(id)}
+       const result=await assetCollection.findOne(query)
+       res.send(result)
      })
 
 
@@ -302,6 +369,147 @@ async function run() {
       const result=await assetCollection.deleteOne(query)
       res.send(result)
     })
+
+
+    // Payment
+    app.post("/create-payment-intent",  async (req, res) => {
+      const { price } = req.body;
+      const amount = parseInt(price * 100);
+      console.log(amount, "amount inside the intent");
+
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: "usd",
+        payment_method_types: ["card"],
+      });
+
+      res.send({
+        clientSecret: paymentIntent.client_secret,
+      });
+    });
+
+    app.post("/payments", async (req, res) => {
+      const payment = req.body;
+
+      const session = client.startSession();
+      session.startTransaction();
+
+      try {
+        const paymentResult = await paymentCollection.insertOne(payment, {
+          session,
+        });
+
+        const filter = { email: payment.hr_email };
+        const updateDoc = {
+          $set: {
+            payment_status: true,
+            payment_info: {
+              transactionId: payment.transactionId,
+              payment_from_company: payment.payment_from_company,
+              payment_for_package: payment.payment_for_package,
+              date: payment.date,
+              price: payment.price,
+            },
+          },
+        };
+
+        const userResult = await userCollection.updateOne(filter, updateDoc, {
+          session,
+        });
+
+        if (paymentResult.insertedId && userResult.modifiedCount === 1) {
+          await session.commitTransaction();
+          res.send({ paymentResult });
+        } else {
+          throw new Error("Payment or user update failed");
+        }
+      } catch (error) {
+        await session.abortTransaction();
+        res.status(500).send({ message: error.message });
+      } finally {
+        session.endSession();
+      }
+    });
+
+    // Increase Limit
+    app.put("/payments",  async (req, res) => {
+      const {
+        email,
+        additionalLimit,
+        transactionId,
+        payment_from_company,
+        payment_for_package,
+        price,
+      } = req.body;
+
+      console.log("Received payment update request:", req.body);
+
+      if (
+        !email ||
+        !transactionId ||
+        !payment_from_company ||
+        !payment_for_package ||
+        !price
+      ) {
+        console.error("Missing required fields in payment update request.");
+        return res.status(400).send({ message: "Missing required fields." });
+      }
+
+      const session = client.startSession();
+      session.startTransaction();
+
+      try {
+        const filter = { email: email };
+        const updateDoc = {
+          $set: {
+            "payment_info.transactionId": transactionId,
+            "payment_info.payment_from_company": payment_from_company,
+            "payment_info.payment_for_package": payment_for_package,
+            "payment_info.date": new Date(),
+            "payment_info.price": price,
+            packages: payment_for_package, // Update the packages field
+          },
+          $inc: {
+            limit: additionalLimit,
+          },
+        };
+
+        const userResult = await userCollection.updateOne(filter, updateDoc, {
+          session,
+        });
+
+        if (userResult.modifiedCount !== 1) {
+          throw new Error("Failed to update user payment info");
+        }
+
+        const payment = {
+          hr_email: email,
+          transactionId,
+          payment_from_company,
+          payment_for_package,
+          date: new Date(),
+          price,
+          payment_status: true,
+        };
+
+        const paymentResult = await paymentCollection.insertOne(payment, {
+          session,
+        });
+
+        if (!paymentResult.insertedId) {
+          throw new Error("Failed to insert payment record");
+        }
+
+        await session.commitTransaction();
+        res.send({ userResult, paymentResult });
+      } catch (error) {
+        console.error("Error processing payment update:", error);
+        await session.abortTransaction();
+        res.status(500).send({ message: error.message });
+      } finally {
+        session.endSession();
+      }
+    });
 
 
 
