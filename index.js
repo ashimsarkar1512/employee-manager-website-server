@@ -17,6 +17,7 @@ app.use(cors(
       "http://localhost:5173",
       'http://localhost:5174',
      "https://assignment-12-category-0007-server.vercel.app",
+     'https://assignment-12-category-7.web.app'
     ],
     
   }
