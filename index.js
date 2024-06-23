@@ -58,198 +58,166 @@ async function run() {
       res.send({token})
     })
 
+ // Verify Token
+ const verifyToken = (request, response, next) => {
+  // console.log("vToken", request.headers.authorization);
+  if (!request.headers.authorization) {
+    return response.status(401).send({ message: "forbidden access 1" });
+  }
+  const token = request.headers.authorization.split(" ")[1];
+  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+    if (err) {
+      console.log(err);
+      return response.status(401).send({ message: "forbidden access 2" });
+    }
+    request.decoded = decoded;
+    next();
+  });
+};
 
-    // Verify Token
-    const verifyToken = (request, response, next) => {
-      // console.log("vToken", request.headers.authorization);
-      if (!request.headers.authorization) {
-        return response.status(401).send({ message: "forbidden access 1" });
-      }
-      const token = request.headers.authorization.split(" ")[1];
-      jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
-        if (err) {
-          console.log(err);
-          return response.status(401).send({ message: "forbidden access 2" });
-        }
-        request.decoded = decoded;
-        next();
-      });
-    };
+// Verify HR
+const verifyHR = async (request, response, next) => {
+  const email = request.decoded.email;
+  const query = { email: email };
+  const user = await userCollection.findOne(query);
+  const isHR = user?.role === "hr";
+  if (!isHR) {
+    return response.status(403).send({ message: "forbidden 1" });
+  }
+  next();
+};
 
-    // Verify HR
-    const verifyHR = async (request, response, next) => {
-      const email = request.decoded.email;
-      const query = { email: email };
-      const user = await userCollection.findOne(query);
-      const isHR = user?.role === "hr";
-      if (!isHR) {
-        return response.status(403).send({ message: "forbidden 1" });
-      }
-      next();
-    };
+// Verify Employee
+const verifyEmployee = async (request, response, next) => {
+  const email = request.decoded.email;
+  const query = { email: email };
+  const user = await userCollection.findOne(query);
+  const isEmployee = user?.role === "employee";
+  if (!isEmployee) {
+    return response.status(403).send({ message: "forbidden 2" });
+  }
+  next();
+};
 
-    // Verify Employee
-    const verifyEmployee = async (request, response, next) => {
-      const email = request.decoded.email;
-      const query = { email: email };
-      const user = await userCollection.findOne(query);
-      const isEmployee = user?.role === "employee";
-      if (!isEmployee) {
-        return response.status(403).send({ message: "forbidden 2" });
-      }
-      next();
-    };
+// Create User
+app.post("/users", async (request, response) => {
+  const user = request.body;
+  const emailQuery = { email: user.email };
+  const companyQuery = { company_name: user.company_name };
+  const role = user.role;
 
-    // Create User
-    app.post("/users", async (request, response) => {
-      const user = request.body;
-      const emailQuery = { email: user.email };
-      const companyQuery = { company_name: user.company_name };
-      const role = user.role;
+  const existingUser = await userCollection.findOne(emailQuery);
+  const existingCompany = await userCollection.findOne(companyQuery);
 
-      const existingUser = await userCollection.findOne(emailQuery);
-      const existingCompany = await userCollection.findOne(companyQuery);
-
-      if (existingUser) {
-        return response.send({
-          message: "User Already Exists!",
-          insertedId: null,
-        });
-      }
-
-      if (role == "hr" && existingCompany) {
-        return response.send({
-          message: "Company Name Already Exists!",
-          insertedId: null,
-        });
-      }
-
-      const result = await useCollection.insertOne(user);
-      response.send(result);
+  if (existingUser) {
+    return response.send({
+      message: "User Already Exists!",
+      insertedId: null,
     });
+  }
 
-    // Get Users
-    app.get("/users", verifyToken, verifyHR, async (request, response) => {
-      const result = await userCollection.find().toArray();
-      response.send(result);
+  if (role == "hr" && existingCompany) {
+    return response.send({
+      message: "Company Name Already Exists!",
+      insertedId: null,
     });
+  }
 
-    // HR User
-    // app.get("/users/hr/:email", async (request, response) => {
-    //   const email = request.params.email;
-    //   const query = { email: email };
-    //   const user = await userCollection.findOne(query);
-    //   let hr = false;
-    //   if (user) {
-    //     hr = user?.role === "hr";
-    //   }
-    //   response.send({ hr });
-    // });
+  const result = await userCollection.insertOne(user);
+  response.send(result);
+});
 
-    // Example: Server code
+// Get Users
+app.get("/users", verifyToken, verifyHR, async (request, response) => {
+  const result = await userCollection.find().toArray();
+  response.send(result);
+});
 
+// HR User
 app.get("/users/hr/:email", async (request, response) => {
-  const token = request.headers.authorization?.split(' ')[1];
-
-  if (!token) {
-      return response.status(401).send({ error: "Unauthorized" });
-  }
-
-  // Verify token (assuming you have a function for this)
-  const verified = verifyToken(token);
-  if (!verified) {
-      return response.status(401).send({ error: "Unauthorized" });
-  }
-
   const email = request.params.email;
   const query = { email: email };
   const user = await userCollection.findOne(query);
-
   let hr = false;
   if (user) {
-      hr = user.role === "hr";
+    hr = user?.role === "hr";
   }
   response.send({ hr });
 });
 
+// Employee User
+app.get("/users/employee/:email", async (request, response) => {
+  const email = request.params.email;
+  const query = { email: email };
+  const user = await userCollection.findOne(query);
+  let employee = false;
+  if (user) {
+    employee = user?.role === "employee";
+  }
+  response.send({ employee });
+});
 
-    // Employee User
-    app.get("/users/employee/:email", async (request, response) => {
-      const email = request.params.email;
-      const query = { email: email };
-      const user = await userCollection.findOne(query);
-      let employee = false;
-      if (user) {
-        employee = user?.role === "employee";
-      }
-      response.send({ employee });
-    });
+// Get An User Data
+app.get("/users/:email", async (req, res) => {
+  const email = req.params.email;
+  const query = { email: email };
+  const user = await userCollection.findOne(query);
+  res.send(user);
+});
 
-    // Get An User Data
-    app.get("/users/:email", async (req, res) => {
-      const email = req.params.email;
-      const query = { email: email };
-      const user = await userCollection.findOne(query);
-      res.send(user);
-    });
+// Update User Name
+app.patch("/users", verifyToken, async (req, res) => {
+  const { email, name } = req.body;
+  const filter = { email };
+  const updateDoc = {
+    $set: {
+      name,
+    },
+  };
+  const result = await userCollection.updateOne(filter, updateDoc);
+  res.send(result);
+});
 
-    // Update User Name
-    app.patch("/users", verifyToken, async (req, res) => {
-      const { email, name } = req.body;
-      const filter = { email };
-      const updateDoc = {
-        $set: {
-          name,
-        },
-      };
-      const result = await userCollection.updateOne(filter, updateDoc);
-      res.send(result);
-    });
+// Add An User To the Company
+app.patch("/users/:id", verifyToken, verifyHR, async (req, res) => {
+  const id = req.params.id;
+  const { company_name, company_logo } = req.body;
+  const filter = { _id: new ObjectId(id) };
+  const updateDoc = {
+    $set: {
+      company_name,
+      company_logo,
+    },
+  };
+  const result = await userCollection.updateOne(filter, updateDoc);
+  res.send(result);
+});
 
-    // Add An User To the Company
-    app.patch("/users/:id", verifyToken, verifyHR, async (req, res) => {
-      const id = req.params.id;
-      const { company_name, company_logo } = req.body;
-      const filter = { _id: new ObjectId(id) };
-      const updateDoc = {
-        $set: {
-          company_name,
-          company_logo,
-        },
-      };
-      const result = await userCollection.updateOne(filter, updateDoc);
-      res.send(result);
-    });
+// Remove An User From the Company
+app.patch("/users/:id", verifyToken, verifyHR, async (req, res) => {
+  const id = req.params.id;
+  const filter = { _id: new ObjectId(id) };
+  const updateDoc = {
+    $unset: {
+      company_name: "",
+      company_logo: "",
+    },
+  };
+  const result = await userCollection.updateOne(filter, updateDoc);
+  res.send(result);
+});
 
-    // Remove An User From the Company
-    app.patch("/users/:id", verifyToken, verifyHR, async (req, res) => {
-      const id = req.params.id;
-      const filter = { _id: new ObjectId(id) };
-      const updateDoc = {
-        $unset: {
-          company_name: "",
-          company_logo: "",
-        },
-      };
-      const result = await userCollection.updateOne(filter, updateDoc);
-      res.send(result);
-    });
-
-    // Get Users by Company Name
-    app.get(
-      "/users/company/:company_name",
-      verifyToken,
-      async (request, response) => {
-        const companyName = request.params.company_name;
-        const query = { company_name: companyName };
-        const users = await userCollection.find(query).toArray();
-        response.send(users);
-      }
-    );
-
-
-
-
+// Get Users by Company Name
+app.get(
+  "/users/company/:company_name",
+  verifyToken,
+  async (request, response) => {
+    const companyName = request.params.company_name;
+    const query = { company_name: companyName };
+    const users = await userCollection.find(query).toArray();
+    response.send(users);
+  }
+);
     app.post("/assets", verifyToken, verifyHR, async (req, res) => {
       const asset = req.body;
       const result = await assetCollection.insertOne(asset);
