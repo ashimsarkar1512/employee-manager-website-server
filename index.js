@@ -16,7 +16,7 @@ app.use(cors(
     origin: [
       "http://localhost:5173",
       'http://localhost:5174',
-     "https://assignment-12-category-0007-server.vercel.app"
+     "https://assignment-12-category-0007-server.vercel.app",
     ],
     
   }
@@ -45,7 +45,7 @@ async function run() {
     const userCollection = client.db("StaffLinkUser").collection("users");
     const productCollection = client.db("StaffLinkUser").collection("requestAsset");
     const paymentCollection = client.db("StaffLinkUser").collection("payments");
-    const employeeCollection = client.db("StaffLinkUser").collection("products");
+   
     const assetCollection = client.db("StaffLinkUser").collection("assets");
 
 
@@ -59,79 +59,155 @@ async function run() {
     })
 
 
-    const verifyToken=(req,res,next)=>{
-      console.log('inside verify token',req.headers.authorization);
-      if(!req.headers.authorization){
-        return res.status(401).send({message:"unauthorized access"})
+    // Verify Token
+    const verifyToken = (request, response, next) => {
+      // console.log("vToken", request.headers.authorization);
+      if (!request.headers.authorization) {
+        return response.status(401).send({ message: "forbidden access 1" });
       }
-      const token=req.headers.authorization.split(' ')[1]
-      console.log(token);
-      jwt.verify(token,process.env.ACCESS_TOKEN_SECRET,(err,decoded)=>{
-        if(err){
-          return res.status(401).send({message:"unauthorized access"})
+      const token = request.headers.authorization.split(" ")[1];
+      jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+        if (err) {
+          console.log(err);
+          return response.status(401).send({ message: "forbidden access 2" });
         }
-        req.decoded=decoded;
-        next()
-      })
-    }
+        request.decoded = decoded;
+        next();
+      });
+    };
 
-    app.get('/users/hr/:email',verifyToken, async(req,res)=>{
-      const email=req.params.email;
-      if(email!== req.decoded.email){
-        return res.status(403).send({message:'forbidden access'})
+    // Verify HR
+    const verifyHR = async (request, response, next) => {
+      const email = request.decoded.email;
+      const query = { email: email };
+      const user = await userCollection.findOne(query);
+      const isHR = user?.role === "hr";
+      if (!isHR) {
+        return response.status(403).send({ message: "forbidden 1" });
       }
-      const query={email:email}
-      const user=await userCollection.findOne(query)
-      let hr=false
-      if(user){
-        hr=user?.role==='hr';
+      next();
+    };
+
+    // Verify Employee
+    const verifyEmployee = async (request, response, next) => {
+      const email = request.decoded.email;
+      const query = { email: email };
+      const user = await userCollection.findOne(query);
+      const isEmployee = user?.role === "employee";
+      if (!isEmployee) {
+        return response.status(403).send({ message: "forbidden 2" });
       }
-      res.send({hr})
-     })
+      next();
+    };
 
-          // employee
+    // Create User
+    app.post("/users", async (request, response) => {
+      const user = request.body;
+      const emailQuery = { email: user.email };
+      const companyQuery = { company_name: user.company_name };
+      const role = user.role;
 
-  //    app.get("/users/:email", async (request, response) => {
-  //     const email = request.params.email;
+      const existingUser = await userCollection.findOne(emailQuery);
+      const existingCompany = await userCollection.findOne(companyQuery);
 
-  //     if (email !== request.decoded.email) {
-  //         return response.status(403).send({ message: "unauthorized" });
-  //     }
+      if (existingUser) {
+        return response.send({
+          message: "User Already Exists!",
+          insertedId: null,
+        });
+      }
 
-  //     const query = { email: email };
-  //     const user = await userCollection.findOne(query);
-  //     let employee = false;
-  //     if (user?.email && user?.role === "employee") {
-  //         employee = user;
-  //     }
-  //     // console.log(hr);
-  //     response.send(employee);
-  // });
+      if (role == "hr" && existingCompany) {
+        return response.send({
+          message: "Company Name Already Exists!",
+          insertedId: null,
+        });
+      }
+
+      const result = await useCollection.insertOne(user);
+      response.send(result);
+    });
+
+    // Get Users
+    app.get("/users", verifyToken, verifyHR, async (request, response) => {
+      const result = await userCollection.find().toArray();
+      response.send(result);
+    });
+
+    // HR User
+    // app.get("/users/hr/:email", async (request, response) => {
+    //   const email = request.params.email;
+    //   const query = { email: email };
+    //   const user = await userCollection.findOne(query);
+    //   let hr = false;
+    //   if (user) {
+    //     hr = user?.role === "hr";
+    //   }
+    //   response.send({ hr });
+    // });
+
+    // Example: Server code
+
+app.get("/users/hr/:email", async (request, response) => {
+  const token = request.headers.authorization?.split(' ')[1];
+
+  if (!token) {
+      return response.status(401).send({ error: "Unauthorized" });
+  }
+
+  // Verify token (assuming you have a function for this)
+  const verified = verifyToken(token);
+  if (!verified) {
+      return response.status(401).send({ error: "Unauthorized" });
+  }
+
+  const email = request.params.email;
+  const query = { email: email };
+  const user = await userCollection.findOne(query);
+
+  let hr = false;
+  if (user) {
+      hr = user.role === "hr";
+  }
+  response.send({ hr });
+});
 
 
-  app.get("/users/:email", async (req, res) => {
-    const email = req.params.email;
-    console.log(email);
-    const query = { email: email };
-    const user = await userCollection.findOne(query);
-    res.send(user);
-  });
-    
+    // Employee User
+    app.get("/users/employee/:email", async (request, response) => {
+      const email = request.params.email;
+      const query = { email: email };
+      const user = await userCollection.findOne(query);
+      let employee = false;
+      if (user) {
+        employee = user?.role === "employee";
+      }
+      response.send({ employee });
+    });
 
-    app.post('/users', async(req,res)=>{
-      const user=req.body;
-      const result=await userCollection.insertOne(user);
-      res.send(result)
-    })
+    // Get An User Data
+    app.get("/users/:email", async (req, res) => {
+      const email = req.params.email;
+      const query = { email: email };
+      const user = await userCollection.findOne(query);
+      res.send(user);
+    });
 
-    app.get('/users',async(req,res)=>{
-      const query = { role: "employee" };
-        const result = await userCollection.find(query).toArray();
-      res.send(result)
-    })
-  
+    // Update User Name
+    app.patch("/users", verifyToken, async (req, res) => {
+      const { email, name } = req.body;
+      const filter = { email };
+      const updateDoc = {
+        $set: {
+          name,
+        },
+      };
+      const result = await userCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
 
-    app.patch("/users/:id", async (req, res) => {
+    // Add An User To the Company
+    app.patch("/users/:id", verifyToken, verifyHR, async (req, res) => {
       const id = req.params.id;
       const { company_name, company_logo } = req.body;
       const filter = { _id: new ObjectId(id) };
@@ -145,149 +221,426 @@ async function run() {
       res.send(result);
     });
 
-  
-    // app.patch('/users/:id', async (req, res) => {
-      
-    //     const { id } = req.params;
-    //     const { companyName, companyLogo, addedBy, affiliate } = req.body;
-    
-    //     const result = await db.collection('users').updateOne(
-    //       { _id: new ObjectId(id) },
-    //       {
-    //         $set: {
-    //           companyName,
-    //           companyLogo,
-    //           addedBy,
-    //           affiliate
-    //         }
-    //       }
-    //     );
-    
-    //    res.send(result)
-    // });
-
-    app.patch('/users/hr/:id',async(req,res)=>{
-      const id=req.params.id
-      const filter={_id:new ObjectId(id)}
-      const updateDoc={
-        $set:{
-          role:'hr'
-        }
-      }
-      const result=await userCollection.updateOne(filter,updateDoc)
-      res.send(result)
-    })
-
-    app.delete('/users/:id',async(req,res)=>{
-      const id=req.params.id
-      const query={_id: new ObjectId(id)}
-      const result=await userCollection.deleteOne(query)
-      res.send(result)
-    })
-    
-
-
-    
-
-
-    
-
-     app.get('/products',async(req,res)=>{
-      const result=await employeeCollection.find().toArray()
-      res.send(result)
-     })
-
-     app.post('/requestAsset', async(req,res)=>{
-      const assets=req.body;
-      const result=await productCollection.insertOne(assets);
-      res.send(result)
-    })
-
-
-     app.get('/requestAsset', async(req,res)=>{
-      const {email}=req.query;
-      const query={email:email}
-           
-      const result=await productCollection.find(query).toArray();
-      res.send(result)
-    })
-
-
-    app.get('/requestAsset/:email',async(req,res)=>{
-      const email=req.params.email
-      const query={email:email}
-      const result=await productCollection.find(query).toArray()
-      console.log(result);
-      res.send(result)
-
-    })
-    app.get('/requestAsset/:email',async(req,res)=>{
-      const email=req.params.email
-      const query={email:email,
-        status:"pending"
-      }
-      const result=await productCollection.find(query).toArray()
-      console.log(result);
-      res.send(result)
-
-    })
-
-
-    app.put('/requestAsset/approve/:id', async (req, res) => {
-      try {
-          const { id } = req.params;
-          const { hrEmail } = req.body;
-          const approvalDate = new Date().toISOString();
-          const updatedRequest = await productCollection.findOneAndUpdate(
-              { _id: new ObjectId(id) },
-              { $set: { status: 'approved', approvalDate: approvalDate, email: hrEmail } },
-              { returnOriginal: false }
-          );
-          res.json({ success: true, data: updatedRequest.value });
-      } catch (err) {
-          console.error('Error approving request:', err);
-          res.status(500).json({ error: 'Failed to approve request' });
-      }
-  });
-    app.put('/requestAsset/reject/:id', async (req, res) => {
-      try {
-        const { id } = req.params;
-        const updatedRequest = await productCollection.findOneAndUpdate(
-          { _id: new ObjectId(id) },
-          { $set: { status: 'rejected' } },
-          { returnOriginal: false }
-        );
-        res.json({ success: true, data: updatedRequest.value });
-      } catch (err) {
-        res.status(500).json({ error: 'Failed to reject request' });
-      }
-    });
-
-   
-
-    
-    app.put('/requestAsset/:id', async (req, res) => {
-      const { id } = req.params;
-      const { status } = req.body;
-      const query = { _id:(id) };
-      const update = {
-        $set: { status: status },
+    // Remove An User From the Company
+    app.patch("/users/:id", verifyToken, verifyHR, async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const updateDoc = {
+        $unset: {
+          company_name: "",
+          company_logo: "",
+        },
       };
- 
-    
+      const result = await userCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
+
+    // Get Users by Company Name
+    app.get(
+      "/users/company/:company_name",
+      verifyToken,
+      async (request, response) => {
+        const companyName = request.params.company_name;
+        const query = { company_name: companyName };
+        const users = await userCollection.find(query).toArray();
+        response.send(users);
+      }
+    );
+
+
+
+
+    app.post("/assets", verifyToken, verifyHR, async (req, res) => {
+      const asset = req.body;
+      const result = await assetCollection.insertOne(asset);
+      res.send(result);
+    });
+
+    // Get Assets
+    app.get("/assets", verifyToken, async (req, res) => {
+      const { search, filter } = req.query;
+      const userEmail = req.decoded.email;
+
       try {
-        const result = await productCollection.updateOne(query, update);
-        if (result.modifiedCount === 1) {
-          res.send({ success: true, message: 'Status updated successfully' });
-        } else {
-          res.send({ success: false, message: 'No document matched the query' });
+        const user = await userCollection.findOne({ email: userEmail });
+
+        if (!user || !user.company_name) {
+          return res.status(400).send("User company not found");
         }
+
+        const userCompany = user.company_name;
+
+        let query = { company_name: userCompany };
+
+        if (search) {
+          query.product_name = { $regex: search, $options: "i" };
+        }
+
+        if (filter) {
+          if (filter === "Available") {
+            query.product_quantity = { $gt: 0 };
+          } else if (filter === "Out Of Stock") {
+            query.product_quantity = 0;
+          } else if (filter === "Returnable") {
+            query.product_type = "Returnable";
+          } else if (filter === "Non-Returnable") {
+            query.product_type = "Non-Returnable";
+          }
+        }
+
+        const assets = await assetCollection.find(query).toArray();
+        res.send(assets);
       } catch (error) {
-        console.error('Error updating status:', error);
-        res.status(500).send({ error: 'Internal Server Error' });
+        console.error("Error fetching assets:", error);
+        res.status(500).send("Error fetching assets");
       }
     });
+
+    // Get Assets with limited stock by company name
+    app.get("/assets/limited-stock/:company_name", async (req, res) => {
+      const companyName = req.params.company_name;
+
+      try {
+        const assets = await assetCollection
+          .find({
+            company_name: companyName,
+            product_quantity: { $lt: 10 },
+          })
+          .toArray();
+
+        res.send(assets);
+      } catch (error) {
+        console.error("Error fetching limited stock assets:", error);
+        res.status(500).send({ error: "Error fetching limited stock assets" });
+      }
+    });
+
+    // Get A Single Asset
+    app.get("/assets/:id", verifyToken, async (req, res) => {
+      const id = req.params.id;
+      const asset = await assetCollection.findOne({ _id: new ObjectId(id) });
+      res.send(asset);
+    });
+
+    // Update an Asset
+    app.put("/assets/:id", verifyToken, verifyHR, async (req, res) => {
+      const id = req.params.id;
+      const assetUpdates = req.body;
+      const filter = { _id: new ObjectId(id) };
+      const updateDoc = {
+        $set: assetUpdates,
+      };
+      const result = await assetCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
+
+    // Delete an asset by ID with company name verification
+    app.delete("/assets/:id", verifyToken, verifyHR, async (req, res) => {
+      const id = req.params.id;
+      const asset = await assetCollection.findOne({ _id: new ObjectId(id) });
+      const result = await assetCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
+      res.send(result);
+    });
+
+
+
     
+
+
+     app.post(
+      "/requestAsset",
+      verifyToken,
+      verifyEmployee,
+      async (req, res) => {
+        const requestedAsset = req.body;
+
+        const session = client.startSession();
+        session.startTransaction();
+
+        try {
+          const { asset_id } = requestedAsset;
+
+          // Find the asset to check its current quantity
+          const asset = await assetCollection.findOne(
+            { _id: new ObjectId(asset_id) },
+            { session }
+          );
+
+          if (!asset) {
+            throw new Error("Asset not found");
+          }
+
+          const productQuantity = parseInt(asset.product_quantity);
+          if (isNaN(productQuantity) || productQuantity === 0) {
+            throw new Error("Asset is out of stock or has an invalid quantity");
+          }
+
+          // Insert the requested asset into the collection
+          const insertResult = await productCollection.insertOne(
+            requestedAsset,
+            { session }
+          );
+
+          if (insertResult.insertedId) {
+            // Decrease the quantity of the asset in the assets collection
+            const assetResult = await assetCollection.updateOne(
+              { _id: new ObjectId(asset_id) },
+              { $inc: { product_quantity: -1 } },
+              { session }
+            );
+
+            if (assetResult.modifiedCount === 1) {
+              await session.commitTransaction();
+              res.send(insertResult);
+            } else {
+              throw new Error("Failed to update asset quantity");
+            }
+          } else {
+            throw new Error("Failed to insert requested asset");
+          }
+        } catch (error) {
+          console.error("Transaction error:", error);
+          await session.abortTransaction();
+          res.status(500).send({ message: error.message });
+        } finally {
+          session.endSession();
+        }
+      }
+    );
+
+    // Approved or Rejected
+    app.put(
+      "/requestAsset/:id",
+      verifyToken,
+      verifyHR,
+      async (req, res) => {
+        const { id } = req.params;
+        const { status } = req.body;
+
+        const session = client.startSession();
+        session.startTransaction();
+
+        try {
+          const requestedAsset = await productCollection.findOne(
+            { _id: new ObjectId(id) },
+            { session }
+          );
+
+          if (!requestedAsset) {
+            throw new Error("Requested asset not found");
+          }
+
+          // Prepare the update document
+          const updateDoc = { $set: { status } };
+          if (status === "Approved") {
+            updateDoc.$set.approval_date = new Date();
+          }
+
+          // Update the status (and approval_date if approved) of the requested asset
+          const updateResult = await  productCollection.updateOne(
+            { _id: new ObjectId(id) },
+            updateDoc,
+            { session }
+          );
+
+          if (status === "Rejected") {
+            // Increment the asset quantity if the status is Rejected
+            const assetResult = await assetCollection.updateOne(
+              { _id: new ObjectId(requestedAsset.asset_id) },
+              { $inc: { product_quantity: 1 } },
+              { session }
+            );
+
+            if (assetResult.modifiedCount !== 1) {
+              throw new Error("Failed to update asset quantity");
+            }
+          }
+
+          await session.commitTransaction();
+          res.send(updateResult);
+        } catch (error) {
+          console.error("Transaction error:", error);
+          await session.abortTransaction();
+          res.status(500).send({ message: error.message });
+        } finally {
+          session.endSession();
+        }
+      }
+    );
+
+    // Get All Requested Assets
+    app.get("/requestAsset", async (req, res) => {
+      const { email, company_name } = req.query;
+      let query = {};
+
+      if (email && company_name) {
+        query = {
+          requester_email: email,
+          requester_company: company_name,
+        };
+      }
+
+      const requestedAssets = await  productCollection
+        .find(query)
+        .toArray();
+      res.send(requestedAssets);
+    });
+
+    // Get All Requested Assets By Employee
+    app.get("/filtered-requestAsset",verifyToken, async (req, res) => {
+      const { company_name, assetName, status, assetType } = req.query;
+      const query = {};
+
+      // Get the email from the query parameter or the decoded JWT token
+      const email = req.query.email || req.decoded.email;
+      if (!email) {
+        return res.status(400).send({ error: "Email not provided or invalid" });
+      }
+      query.requester_email = email;
+
+      if (company_name) {
+        query.requester_company = company_name;
+      }
+
+      if (assetName) {
+        query.asset_name = { $regex: assetName, $options: "i" };
+      }
+
+      if (status) {
+        query.status = status;
+      }
+
+      if (assetType === "Returnable") {
+        query.asset_type = "Returnable";
+      } else if (assetType === "Non-Returnable") {
+        query.asset_type = "Non-Returnable";
+      }
+
+      try {
+        const result = await  productCollection.find(query).toArray();
+        res.send(result);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ error: "Failed to fetch filtered requested assets" });
+      }
+    });
+
+    // Cancel a Requested Asset
+    app.put(
+      "/requestAsset/:id/cancel",
+      verifyToken,
+      verifyEmployee,
+      async (req, res) => {
+        const { id } = req.params;
+
+        const session = client.startSession();
+        session.startTransaction();
+
+        try {
+          const requestedAsset = await  productCollection.findOne(
+            { _id: new ObjectId(id) },
+            { session }
+          );
+
+          if (!requestedAsset) {
+            throw new Error("Requested asset not found");
+          }
+
+          // Update the status of the requested asset to "Cancelled"
+          const updateResult = await  productCollection.updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { status: "Cancelled" } },
+            { session }
+          );
+
+          // Increment the asset quantity in the assets collection
+          const assetResult = await assetCollection.updateOne(
+            { _id: new ObjectId(requestedAsset.asset_id) },
+            { $inc: { product_quantity: 1 } },
+            { session }
+          );
+
+          if (
+            updateResult.modifiedCount === 1 &&
+            assetResult.modifiedCount === 1
+          ) {
+            await session.commitTransaction();
+            res.send(updateResult);
+          } else {
+            throw new Error("Failed to update asset status or quantity");
+          }
+        } catch (error) {
+          console.error("Transaction error:", error);
+          await session.abortTransaction();
+          res.status(500).send({ message: error.message });
+        } finally {
+          session.endSession();
+        }
+      }
+    );
+
+    // Return a Requested Asset
+    app.put(
+      "/requestAsset/:id/return",
+      verifyToken,
+      verifyEmployee,
+      async (req, res) => {
+        const { id } = req.params;
+
+        const session = client.startSession();
+        session.startTransaction();
+
+        try {
+          const requestedAsset = await  productCollection.findOne(
+            { _id: new ObjectId(id) },
+            { session }
+          );
+
+          if (!requestedAsset) {
+            throw new Error("Requested asset not found");
+          }
+
+          // Check if the asset is already returned
+          if (requestedAsset.status === "Returned") {
+            throw new Error("Asset is already returned");
+          }
+
+          // Update the status of the requested asset to "Returned"
+          const updateResult = await  productCollection.updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { status: "Returned" } },
+            { session }
+          );
+
+          // Increment the asset quantity in the assets collection
+          const assetResult = await assetCollection.updateOne(
+            { _id: new ObjectId(requestedAsset.asset_id) },
+            { $inc: { product_quantity: 1 } },
+            { session }
+          );
+
+          if (
+            updateResult.modifiedCount === 1 &&
+            assetResult.modifiedCount === 1
+          ) {
+            await session.commitTransaction();
+            res.send(updateResult);
+          } else {
+            throw new Error("Failed to update asset status or quantity");
+          }
+        } catch (error) {
+          console.error("Transaction error:", error);
+          await session.abortTransaction();
+          res.status(500).send({ message: error.message });
+        } finally {
+          session.endSession();
+        }
+      }
+    );
+
 
 
 
@@ -295,80 +648,7 @@ async function run() {
     // Hr manager 
 
 
-    app.post('/assets', async(req,res)=>{
-      const asset=req.body;
-      const result=await assetCollection.insertOne(asset);
-      res.send(result)
-    })
-   
-   
-     app.get('/assets',async(req,res)=>{
-      const filter=req.query;
-      console.log(filter);
-      const query={}
-      if (typeof filter.search === 'string' && filter.search.length > 0) {
-        query.name = { $regex: filter.search, $options: 'i' };
-      }
-
-      if (typeof filter.type === 'string' && filter.type.length > 0) {
-        query.type = { $regex: new RegExp(filter.type, 'i') };
-      }
-      const options={
-          sort:{quantity:filter.sort==='asc'? 1:-1}
-      }
-      const result=await assetCollection.find(query,options).toArray()
-      res.send(result)
-     })
-
-
-
-     app.get('/assets/:id', async(req,res)=>{
-      const id=req.params.id
-       const query={_id:new ObjectId(id)}
-       const result=await assetCollection.findOne(query)
-       res.send(result)
-     })
-
-
-    //  app.get('/assets',async(req,res)=>{
-    //   const filter=req.query.filter
-    //   let query={}
-    //   if(filter){
-    //    query = { type: { $regex: new RegExp(filter, 'i') } };
-       
-    //   }
-    //   const result=await assetCollection.find(query).toArray()
-    //   res.send(result)
-    //  })
- 
-
-
-     app.patch('/assets/:id',async(req,res)=>{
-      const item=req.body;
-      const id=req.params.id
-      const filter ={_id: new ObjectId(id)}
-      const updateDoc={
-        $set:{
-          name:item.name,
-          type:item.type,
-          quantity:item.quantity,
-       
-          date:item.date
-
-        }
-       
-      }
-      const result=await assetCollection.updateOne(filter,updateDoc)
-      res.send(result)
-    })
-
-
-    app.delete('/assets/:id',async(req,res)=>{
-      const id=req.params.id
-      const query={_id: new ObjectId(id)}
-      const result=await assetCollection.deleteOne(query)
-      res.send(result)
-    })
+     
 
 
     // Payment
